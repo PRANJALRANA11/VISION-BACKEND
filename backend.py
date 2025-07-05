@@ -1,6 +1,8 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from Get_started_LiveAPI import AudioLoop  
+from Get_started_LiveAPI import create_audio_loop,logger
+    
 import asyncio
+import uuid
 
 app = FastAPI()
 
@@ -17,7 +19,13 @@ app = FastAPI()
 
 
 @app.websocket("/ws")
-async def stream_websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    loop = AudioLoop(video_mode="camera", websocket=websocket)
-    await loop.run_with_websocket()
+    client_id = str(uuid.uuid4())
+    
+    try:
+        await create_audio_loop(client_id, websocket)
+    except WebSocketDisconnect:
+        logger.info(f"Client {client_id} disconnected")
+    except Exception as e:
+        logger.error(f"Error with client {client_id}: {e}")

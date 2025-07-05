@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Broadcaster Receiver</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        color: white;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+
+      .header h1 {
+        font-size: 2.5em;
+        margin-bottom: 10px;
+        background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .status {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 15px;
+        padding: 20px;
+        margin-bottom: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .status-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 15px;
+      }
+
+      .status-item {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+      }
+
+      .status-item strong {
+        display: block;
+        font-size: 1.2em;
+        margin-bottom: 5px;
+      }
+
+      .main-content {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .video-section {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 15px;
+        padding: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .video-container {
+        position: relative;
+        width: 100%;
+        max-width: 640px;
+        margin: 0 auto;
+      }
+
+      #videoFrame {
+        width: 100%;
+        height: auto;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        display: none;
+      }
+
+      .video-placeholder {
+        width: 100%;
+        height: 300px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2em;
+        color: rgba(255, 255, 255, 0.7);
+        border: 2px dashed rgba(255, 255, 255, 0.3);
+      }
+
+      .chat-section {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 15px;
+        padding: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        display: flex;
+        flex-direction: column;
+        max-height: 500px;
+      }
+
+      .chat-header {
+        font-size: 1.3em;
+        font-weight: bold;
+        margin-bottom: 15px;
+        text-align: center;
+      }
+
+      .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px;
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 10px;
+        margin-bottom: 15px;
+      }
+
+      .message {
+        margin-bottom: 15px;
+        padding: 12px;
+        border-radius: 10px;
+        animation: fadeIn 0.3s ease-in;
+      }
+
+      .message.user {
+        background: rgba(76, 175, 80, 0.3);
+        border-left: 4px solid #4caf50;
+      }
+
+      .message.ai {
+        background: rgba(33, 150, 243, 0.3);
+        border-left: 4px solid #2196f3;
+      }
+
+      .message .sender {
+        font-weight: bold;
+        margin-bottom: 5px;
+        font-size: 0.9em;
+      }
+
+      .message .content {
+        line-height: 1.4;
+      }
+
+      .controls {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 15px;
+        padding: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        text-align: center;
+      }
+
+      .btn {
+        background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+        border: none;
+        padding: 12px 30px;
+        border-radius: 25px;
+        color: white;
+        font-weight: bold;
+        cursor: pointer;
+        margin: 0 10px;
+        font-size: 1em;
+        transition: all 0.3s ease;
+      }
+
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+      }
+
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .connection-status {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+        animation: pulse 2s infinite;
+      }
+
+      .connection-status.connected {
+        background: #4caf50;
+      }
+
+      .connection-status.disconnected {
+        background: #f44336;
+      }
+
+      .connection-status.connecting {
+        background: #ff9800;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+
+      .audio-controls {
+        margin-top: 15px;
+      }
+
+      .volume-control {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .volume-slider {
+        width: 150px;
+        height: 5px;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.3);
+        outline: none;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+      }
+
+      .volume-slider:hover {
+        opacity: 1;
+      }
+
+      .stats {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 15px;
+        font-size: 0.9em;
+        color: rgba(255, 255, 255, 0.8);
+      }
+
+      @media (max-width: 768px) {
+        .main-content {
+          grid-template-columns: 1fr;
+        }
+
+        .status-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>📺 Broadcaster Receiver</h1>
+        <p>Connect to receive live video, audio, and AI responses</p>
+      </div>
+
+      <div class="status">
+        <div
+          style="display: flex; align-items: center; justify-content: center"
+        >
+          <span
+            class="connection-status disconnected"
+            id="connectionStatus"
+          ></span>
+          <span id="connectionText">Disconnected</span>
+        </div>
+        <div class="status-grid">
+          <div class="status-item">
+            <strong id="clientId">Unknown</strong>
+            <div>Client ID</div>
+          </div>
+          <div class="status-item">
+            <strong id="role">None</strong>
+            <div>Role</div>
+          </div>
+          <div class="status-item">
+            <strong id="broadcaster">None</strong>
+            <div>Broadcaster</div>
+          </div>
+          <div class="status-item">
+            <strong id="totalClients">0</strong>
+            <div>Total Clients</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="main-content">
+        <div class="video-section">
+          <h3 style="margin-bottom: 15px; text-align: center">
+            📹 Live Video Feed
+          </h3>
+          <div class="video-container">
+            <img id="videoFrame" alt="Video feed" />
+            <div class="video-placeholder" id="videoPlaceholder">
+              📷 Waiting for video feed...
+            </div>
+          </div>
+          <div class="stats">
+            <span>Frames: <span id="frameCount">0</span></span>
+            <span>FPS: <span id="fps">0</span></span>
+            <span>Last Update: <span id="lastUpdate">Never</span></span>
+          </div>
+        </div>
+
+        <div class="chat-section">
+          <div class="chat-header">💬 AI Conversation</div>
+          <div class="chat-messages" id="chatMessages">
+            <div
+              style="
+                text-align: center;
+                color: rgba(255, 255, 255, 0.6);
+                font-style: italic;
+              "
+            >
+              Waiting for conversation...
+            </div>
+          </div>
+          <div class="audio-controls">
+            <div>🔊 Audio Status: <span id="audioStatus">Ready</span></div>
+            <div class="volume-control">
+              <span>🔇</span>
+              <input
+                type="range"
+                id="volumeSlider"
+                class="volume-slider"
+                min="0"
+                max="100"
+                value="50"
+              />
+              <span>🔊</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn" id="connectBtn" onclick="connect()">
+          🔗 Connect
+        </button>
+        <button class="btn" id="disconnectBtn" onclick="disconnect()" disabled>
+          📴 Disconnect
+        </button>
+        <button class="btn" onclick="getStatus()">📊 Get Status</button>
+        <button class="btn" onclick="clearChat()">🗑️ Clear Chat</button>
+      </div>
+    </div>
+
+    <script>
+      let websocket = null;
+      let connected = false;
+      let frameCount = 0;
+      let lastFrameTime = 0;
+      let fpsCounter = 0;
+      let audioContext = null;
+      let gainNode = null;
+
+      // WebSocket server URL - change this to match your server
+      const SERVER_URL = "ws://localhost:8000/ws";
+
+      // Initialize audio context
+      async function initAudio() {
+        try {
+          audioContext = new (window.AudioContext ||
+            window.webkitAudioContext)();
+          gainNode = audioContext.createGain();
+          gainNode.connect(audioContext.destination);
+
+          // Set initial volume
+          const volumeSlider = document.getElementById("volumeSlider");
+          gainNode.gain.value = volumeSlider.value / 100;
+
+          document.getElementById("audioStatus").textContent = "Ready";
+          return true;
+        } catch (error) {
+          console.error("Failed to initialize audio:", error);
+          document.getElementById("audioStatus").textContent = "Error";
+          return false;
+        }
+      }
+
+      // Volume control
+      document.getElementById("volumeSlider").addEventListener("input", (e) => {
+        if (gainNode) {
+          gainNode.gain.value = e.target.value / 100;
+        }
+      });
+
+      async function connect() {
+        if (connected) return;
+
+        try {
+          updateConnectionStatus("connecting", "Connecting...");
+          document.getElementById("connectBtn").disabled = true;
+
+          // Initialize audio
+          await initAudio();
+
+          websocket = new WebSocket(SERVER_URL);
+
+          websocket.onopen = () => {
+            connected = true;
+            updateConnectionStatus("connected", "Connected");
+            document.getElementById("connectBtn").disabled = true;
+            document.getElementById("disconnectBtn").disabled = false;
+
+            // Set role as receiver
+            websocket.send(
+              JSON.stringify({
+                type: "set_role",
+                role: "receiver",
+              })
+            );
+
+            // Get initial status
+            getStatus();
+          };
+
+          websocket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            handleMessage(data);
+          };
+
+          websocket.onclose = () => {
+            connected = false;
+            updateConnectionStatus("disconnected", "Disconnected");
+            document.getElementById("connectBtn").disabled = false;
+            document.getElementById("disconnectBtn").disabled = true;
+          };
+
+          websocket.onerror = (error) => {
+            console.error("WebSocket error:", error);
+            updateConnectionStatus("disconnected", "Connection Error");
+          };
+        } catch (error) {
+          console.error("Connection failed:", error);
+          updateConnectionStatus("disconnected", "Connection Failed");
+          document.getElementById("connectBtn").disabled = false;
+        }
+      }
+
+      function disconnect() {
+        if (websocket) {
+          websocket.send(JSON.stringify({ type: "disconnect" }));
+          websocket.close();
+        }
+        connected = false;
+      }
+
+      function updateConnectionStatus(status, text) {
+        const statusElement = document.getElementById("connectionStatus");
+        const textElement = document.getElementById("connectionText");
+
+        statusElement.className = `connection-status ${status}`;
+        textElement.textContent = text;
+      }
+
+      function handleMessage(data) {
+        const msgType = data.type;
+
+        switch (msgType) {
+          case "role_confirmed":
+            console.log("Role confirmed:", data.role);
+            document.getElementById("role").textContent = data.role;
+            break;
+
+          case "role_error":
+            console.error("Role error:", data.message);
+            addChatMessage("system", `Error: ${data.message}`);
+            break;
+
+          case "frame-to-show-frontend":
+            displayFrame(data.data);
+            break;
+
+          case "ai":
+            addChatMessage("ai", data.data);
+            break;
+
+          case "user":
+            addChatMessage("user", data.data);
+            break;
+
+          case "audio_from_gemini":
+            // playAudio(data.data);
+            break;
+
+          case "broadcaster_changed":
+            document.getElementById("broadcaster").textContent =
+              data.broadcaster_id;
+            addChatMessage("system", `New broadcaster: ${data.broadcaster_id}`);
+            break;
+
+          case "status":
+            updateStatus(data);
+            break;
+
+          case "error":
+            console.error("Server error:", data.data);
+            addChatMessage("system", `Server error: ${data.data}`);
+            break;
+
+          default:
+            console.log("Unknown message type:", msgType, data);
+        }
+      }
+
+      function displayFrame(frameData) {
+        const videoFrame = document.getElementById("videoFrame");
+        const videoPlaceholder = document.getElementById("videoPlaceholder");
+
+        // Update frame counter
+        frameCount++;
+        document.getElementById("frameCount").textContent = frameCount;
+
+        // Update FPS
+        const now = Date.now();
+        if (now - lastFrameTime >= 1000) {
+          document.getElementById("fps").textContent = fpsCounter;
+          fpsCounter = 0;
+          lastFrameTime = now;
+        }
+        fpsCounter++;
+
+        // Update last update time
+        document.getElementById("lastUpdate").textContent =
+          new Date().toLocaleTimeString();
+
+        // Display frame
+        videoFrame.src = `data:image/jpeg;base64,${frameData}`;
+        videoFrame.style.display = "block";
+        videoPlaceholder.style.display = "none";
+      }
+
+      async function playAudio(audioData) {
+        if (!audioContext || !gainNode) return;
+
+        try {
+          // Resume audio context if suspended
+          if (audioContext.state === "suspended") {
+            await audioContext.resume();
+          }
+
+          // Decode base64 audio data
+          const binaryString = atob(audioData);
+          const arrayBuffer = new ArrayBuffer(binaryString.length);
+          const uint8Array = new Uint8Array(arrayBuffer);
+
+          for (let i = 0; i < binaryString.length; i++) {
+            uint8Array[i] = binaryString.charCodeAt(i);
+          }
+
+          // Decode audio data
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+          // Create and play audio source
+          const source = audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(gainNode);
+          source.start();
+
+          document.getElementById("audioStatus").textContent = "Playing";
+
+          // Reset status after playing
+          setTimeout(() => {
+            document.getElementById("audioStatus").textContent = "Ready";
+          }, 1000);
+        } catch (error) {
+          console.error("Audio playback error:", error);
+          document.getElementById("audioStatus").textContent = "Error";
+        }
+      }
+
+      function addChatMessage(sender, content) {
+        const chatMessages = document.getElementById("chatMessages");
+
+        // Clear placeholder text
+        if (
+          chatMessages.children.length === 1 &&
+          chatMessages.children[0].style.textAlign === "center"
+        ) {
+          chatMessages.innerHTML = "";
+        }
+
+        const messageDiv = document.createElement("div");
+        messageDiv.className = `message ${sender}`;
+
+        const senderSpan = document.createElement("div");
+        senderSpan.className = "sender";
+        senderSpan.textContent =
+          sender === "ai"
+            ? "🤖 AI"
+            : sender === "user"
+            ? "👤 User"
+            : "⚙️ System";
+
+        const contentDiv = document.createElement("div");
+        contentDiv.className = "content";
+        contentDiv.textContent = content;
+
+        messageDiv.appendChild(senderSpan);
+        messageDiv.appendChild(contentDiv);
+        chatMessages.appendChild(messageDiv);
+
+        // Auto-scroll to bottom
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      function updateStatus(status) {
+        document.getElementById("clientId").textContent =
+          status.client_id || "Unknown";
+        document.getElementById("role").textContent = status.is_receiver
+          ? "Receiver"
+          : "Unknown";
+        document.getElementById("broadcaster").textContent =
+          status.broadcaster_id || "None";
+        document.getElementById("totalClients").textContent =
+          status.total_clients || 0;
+      }
+
+      function getStatus() {
+        if (websocket && connected) {
+          websocket.send(JSON.stringify({ type: "get_status" }));
+        }
+      }
+
+      function clearChat() {
+        const chatMessages = document.getElementById("chatMessages");
+        chatMessages.innerHTML =
+          '<div style="text-align: center; color: rgba(255, 255, 255, 0.6); font-style: italic;">Chat cleared...</div>';
+      }
+
+      // Auto-connect on page load
+      window.addEventListener("load", () => {
+        // Small delay to ensure page is fully loaded
+        setTimeout(() => {
+          connect();
+        }, 500);
+      });
+
+      // Handle page unload
+      window.addEventListener("beforeunload", () => {
+        if (connected) {
+          disconnect();
+        }
+      });
+    </script>
+  </body>
+</html>
