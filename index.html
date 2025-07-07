@@ -155,6 +155,11 @@
         border-left: 4px solid #2196f3;
       }
 
+      .message.system {
+        background: rgba(255, 152, 0, 0.3);
+        border-left: 4px solid #ff9800;
+      }
+
       .message .sender {
         font-weight: bold;
         margin-bottom: 5px;
@@ -219,6 +224,32 @@
         background: #ff9800;
       }
 
+      .audio-visualizer {
+        width: 100%;
+        height: 40px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 5px;
+        margin-top: 10px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .audio-bars {
+        display: flex;
+        align-items: end;
+        height: 100%;
+        padding: 5px;
+        gap: 2px;
+      }
+
+      .audio-bar {
+        flex: 1;
+        background: linear-gradient(to top, #4ecdc4, #44a08d);
+        border-radius: 2px;
+        min-height: 2px;
+        transition: height 0.1s ease;
+      }
+
       @keyframes fadeIn {
         from {
           opacity: 0;
@@ -274,6 +305,14 @@
         margin-top: 15px;
         font-size: 0.9em;
         color: rgba(255, 255, 255, 0.8);
+      }
+
+      .audio-stats {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 10px;
+        font-size: 0.8em;
+        color: rgba(255, 255, 255, 0.6);
       }
 
       @media (max-width: 768px) {
@@ -356,7 +395,9 @@
             </div>
           </div>
           <div class="audio-controls">
-            <div>🔊 Audio Status: <span id="audioStatus">Ready</span></div>
+            <div>
+              🔊 Audio Status: <span id="audioStatus">Initializing</span>
+            </div>
             <div class="volume-control">
               <span>🔇</span>
               <input
@@ -368,6 +409,14 @@
                 value="50"
               />
               <span>🔊</span>
+            </div>
+            <div class="audio-visualizer">
+              <div class="audio-bars" id="audioBars"></div>
+            </div>
+            <div class="audio-stats">
+              <span>Played: <span id="audioPlayed">0</span></span>
+              <span>Errors: <span id="audioErrors">0</span></span>
+              <span>Queue: <span id="audioQueue">0</span></span>
             </div>
           </div>
         </div>
@@ -393,29 +442,118 @@
       let fpsCounter = 0;
       let audioContext = null;
       let gainNode = null;
+      let analyserNode = null;
+      let audioQueue = [];
+      let isPlayingAudio = false;
+      let audioStats = {
+        played: 0,
+        errors: 0,
+      };
+      let audioScheduler = null;
+      let lastAudioEndTime = 0;
+      let crossfadeBuffer = null;
 
       // WebSocket server URL - change this to match your server
       const SERVER_URL = "ws://localhost:8000/ws";
 
-      // Initialize audio context
+      // Audio constants
+      const AUDIO_SAMPLE_RATE = 16000; // Default sample rate
+      const VISUALIZER_BARS = 20;
+
+      // Initialize audio context with advanced settings
       async function initAudio() {
         try {
-          audioContext = new (window.AudioContext ||
-            window.webkitAudioContext)();
+          // Create audio context with optimal settings
+          audioContext = new (window.AudioContext || window.webkitAudioContext)(
+            {
+              sampleRate: AUDIO_SAMPLE_RATE,
+              latencyHint: "interactive",
+            }
+          );
+
+          // Create gain node for volume control
           gainNode = audioContext.createGain();
-          gainNode.connect(audioContext.destination);
+
+          // Create analyser for visualization
+          analyserNode = audioContext.createAnalyser();
+          analyserNode.fftSize = 256;
+          analyserNode.smoothingTimeConstant = 0.8;
+
+          // Connect nodes
+          gainNode.connect(analyserNode);
+          analyserNode.connect(audioContext.destination);
 
           // Set initial volume
           const volumeSlider = document.getElementById("volumeSlider");
           gainNode.gain.value = volumeSlider.value / 100;
 
-          document.getElementById("audioStatus").textContent = "Ready";
+          // Initialize visualizer
+          initAudioVisualizer();
+
+          // Start visualizer animation
+          startAudioVisualization();
+
+          // Initialize audio scheduler
+          lastAudioEndTime = audioContext.currentTime;
+
+          updateAudioStatus("Ready");
           return true;
         } catch (error) {
           console.error("Failed to initialize audio:", error);
-          document.getElementById("audioStatus").textContent = "Error";
+          updateAudioStatus("Error: " + error.message);
           return false;
         }
+      }
+
+      // Initialize audio visualizer bars
+      function initAudioVisualizer() {
+        const audioBars = document.getElementById("audioBars");
+        audioBars.innerHTML = "";
+
+        for (let i = 0; i < VISUALIZER_BARS; i++) {
+          const bar = document.createElement("div");
+          bar.className = "audio-bar";
+          bar.style.height = "2px";
+          audioBars.appendChild(bar);
+        }
+      }
+
+      // Start audio visualization
+      function startAudioVisualization() {
+        if (!analyserNode) return;
+
+        const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+        const bars = document.querySelectorAll(".audio-bar");
+
+        function animate() {
+          if (!analyserNode) return;
+
+          analyserNode.getByteFrequencyData(dataArray);
+
+          // Update bars based on frequency data
+          const step = Math.floor(dataArray.length / VISUALIZER_BARS);
+          for (let i = 0; i < VISUALIZER_BARS; i++) {
+            const index = i * step;
+            const height = Math.max(2, (dataArray[index] / 255) * 35);
+            bars[i].style.height = height + "px";
+          }
+
+          requestAnimationFrame(animate);
+        }
+
+        animate();
+      }
+
+      // Update audio status display
+      function updateAudioStatus(status) {
+        document.getElementById("audioStatus").textContent = status;
+      }
+
+      // Update audio stats display
+      function updateAudioStats() {
+        document.getElementById("audioPlayed").textContent = audioStats.played;
+        document.getElementById("audioErrors").textContent = audioStats.errors;
+        document.getElementById("audioQueue").textContent = audioQueue.length;
       }
 
       // Volume control
@@ -425,6 +563,201 @@
         }
       });
 
+      // Enhanced audio processing with glitch reduction
+      async function processAudioData(
+        audioData,
+        format = "int16",
+        sampleRate = AUDIO_SAMPLE_RATE
+      ) {
+        try {
+          // Decode base64 audio data
+          const binaryString = atob(audioData);
+          const arrayBuffer = new ArrayBuffer(binaryString.length);
+          const dataView = new DataView(arrayBuffer);
+
+          // Convert binary string to ArrayBuffer
+          for (let i = 0; i < binaryString.length; i++) {
+            dataView.setUint8(i, binaryString.charCodeAt(i));
+          }
+
+          let audioBuffer;
+
+          if (format === "int16") {
+            // Handle raw PCM int16 data with smoothing
+            audioBuffer = await convertPCMToAudioBuffer(
+              arrayBuffer,
+              sampleRate
+            );
+          } else {
+            // Handle encoded audio (MP3, WAV, etc.)
+            audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          }
+
+          return audioBuffer;
+        } catch (error) {
+          console.error("Audio processing error:", error);
+          throw error;
+        }
+      }
+
+      // Convert PCM int16 data to AudioBuffer with anti-glitch processing
+      async function convertPCMToAudioBuffer(arrayBuffer, sampleRate) {
+        const dataView = new DataView(arrayBuffer);
+        const numSamples = arrayBuffer.byteLength / 2; // 16-bit = 2 bytes per sample
+
+        // Create AudioBuffer
+        const audioBuffer = audioContext.createBuffer(
+          1,
+          numSamples,
+          sampleRate
+        );
+        const channelData = audioBuffer.getChannelData(0);
+
+        // Convert int16 to float32 with smoothing
+        for (let i = 0; i < numSamples; i++) {
+          const sample = dataView.getInt16(i * 2, true); // little endian
+          let floatSample = sample / 32768.0; // Convert to float32 range [-1, 1]
+
+          // Apply smoothing filter to reduce glitches
+          if (i > 0) {
+            const prevSample = channelData[i - 1];
+            const diff = Math.abs(floatSample - prevSample);
+
+            // If there's a large jump, apply smoothing
+            if (diff > 0.5) {
+              floatSample = prevSample + (floatSample - prevSample) * 0.3;
+            }
+          }
+
+          // Clamp values to prevent overflow
+          channelData[i] = Math.max(-1.0, Math.min(1.0, floatSample));
+        }
+
+        // Apply fade-in/fade-out to chunk boundaries
+        const fadeLength = Math.min(64, numSamples / 4); // Fade length in samples
+
+        // Fade in at the beginning
+        for (let i = 0; i < fadeLength; i++) {
+          const fadeFactor = i / fadeLength;
+          channelData[i] *= fadeFactor;
+        }
+
+        // Fade out at the end
+        for (let i = numSamples - fadeLength; i < numSamples; i++) {
+          const fadeFactor = (numSamples - i) / fadeLength;
+          channelData[i] *= fadeFactor;
+        }
+
+        return audioBuffer;
+      }
+
+      // Enhanced audio playback with seamless transitions
+      async function playAudio(
+        audioData,
+        format = "int16",
+        sampleRate = AUDIO_SAMPLE_RATE
+      ) {
+        if (!audioContext || !gainNode) {
+          console.error("Audio context not initialized");
+          return;
+        }
+
+        // Add to queue with timestamp
+        audioQueue.push({
+          audioData,
+          format,
+          sampleRate,
+          timestamp: Date.now(),
+        });
+        updateAudioStats();
+
+        // Process queue if not already playing
+        if (!isPlayingAudio) {
+          await processAudioQueue();
+        }
+      }
+
+      // Process audio queue with seamless playback
+      async function processAudioQueue() {
+        if (isPlayingAudio || audioQueue.length === 0) return;
+
+        isPlayingAudio = true;
+        updateAudioStatus("Processing");
+
+        while (audioQueue.length > 0) {
+          const audioItem = audioQueue.shift();
+          updateAudioStats();
+
+          try {
+            // Resume audio context if suspended
+            if (audioContext.state === "suspended") {
+              await audioContext.resume();
+            }
+
+            updateAudioStatus("Playing");
+
+            // Process audio data
+            const audioBuffer = await processAudioData(
+              audioItem.audioData,
+              audioItem.format,
+              audioItem.sampleRate
+            );
+
+            // Schedule audio for seamless playback
+            await scheduleAudioPlayback(audioBuffer);
+
+            audioStats.played++;
+            updateAudioStats();
+          } catch (error) {
+            console.error("Audio playback error:", error);
+            audioStats.errors++;
+            updateAudioStats();
+            updateAudioStatus("Error: " + error.message);
+          }
+        }
+
+        isPlayingAudio = false;
+        updateAudioStatus("Ready");
+      }
+
+      // Schedule audio playback with precise timing
+      async function scheduleAudioPlayback(audioBuffer) {
+        return new Promise((resolve) => {
+          const source = audioContext.createBufferSource();
+          source.buffer = audioBuffer;
+
+          // Apply low-pass filter to reduce high-frequency noise
+          const filter = audioContext.createBiquadFilter();
+          filter.type = "lowpass";
+          filter.frequency.value = 8000; // Cut off frequencies above 8kHz
+          filter.Q.value = 0.5;
+
+          // Connect: source -> filter -> gain -> analyser -> destination
+          source.connect(filter);
+          filter.connect(gainNode);
+
+          // Calculate precise start time for seamless playback
+          const currentTime = audioContext.currentTime;
+          const startTime = Math.max(currentTime, lastAudioEndTime);
+
+          // Small overlap to prevent gaps
+          const overlapTime = 0.01; // 10ms overlap
+          const actualStartTime = Math.max(
+            startTime - overlapTime,
+            currentTime
+          );
+
+          source.onended = () => {
+            source.disconnect();
+            filter.disconnect();
+            resolve();
+          };
+
+          source.start(actualStartTime);
+          lastAudioEndTime = actualStartTime + audioBuffer.duration;
+        });
+      }
+
       async function connect() {
         if (connected) return;
 
@@ -433,7 +766,10 @@
           document.getElementById("connectBtn").disabled = true;
 
           // Initialize audio
-          await initAudio();
+          const audioInitialized = await initAudio();
+          if (!audioInitialized) {
+            throw new Error("Failed to initialize audio");
+          }
 
           websocket = new WebSocket(SERVER_URL);
 
@@ -456,25 +792,43 @@
           };
 
           websocket.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            handleMessage(data);
+            try {
+              const data = JSON.parse(event.data);
+              handleMessage(data);
+            } catch (error) {
+              console.error("Message parsing error:", error);
+              addChatMessage("system", "Error parsing message from server");
+            }
           };
 
-          websocket.onclose = () => {
+          websocket.onclose = (event) => {
             connected = false;
             updateConnectionStatus("disconnected", "Disconnected");
             document.getElementById("connectBtn").disabled = false;
             document.getElementById("disconnectBtn").disabled = true;
+
+            // Clear audio queue
+            audioQueue = [];
+            updateAudioStats();
+
+            if (event.code !== 1000) {
+              addChatMessage(
+                "system",
+                `Connection closed unexpectedly: ${event.reason}`
+              );
+            }
           };
 
           websocket.onerror = (error) => {
             console.error("WebSocket error:", error);
             updateConnectionStatus("disconnected", "Connection Error");
+            addChatMessage("system", "WebSocket connection error");
           };
         } catch (error) {
           console.error("Connection failed:", error);
           updateConnectionStatus("disconnected", "Connection Failed");
           document.getElementById("connectBtn").disabled = false;
+          addChatMessage("system", `Connection failed: ${error.message}`);
         }
       }
 
@@ -483,6 +837,12 @@
           websocket.send(JSON.stringify({ type: "disconnect" }));
           websocket.close();
         }
+
+        // Clear audio queue
+        audioQueue = [];
+        isPlayingAudio = false;
+        updateAudioStats();
+
         connected = false;
       }
 
@@ -497,50 +857,62 @@
       function handleMessage(data) {
         const msgType = data.type;
 
-        switch (msgType) {
-          case "role_confirmed":
-            console.log("Role confirmed:", data.role);
-            document.getElementById("role").textContent = data.role;
-            break;
+        try {
+          switch (msgType) {
+            case "role_confirmed":
+              console.log("Role confirmed:", data.role);
+              document.getElementById("role").textContent = data.role;
+              addChatMessage("system", `Role confirmed: ${data.role}`);
+              break;
 
-          case "role_error":
-            console.error("Role error:", data.message);
-            addChatMessage("system", `Error: ${data.message}`);
-            break;
+            case "role_error":
+              console.error("Role error:", data.message);
+              addChatMessage("system", `Role error: ${data.message}`);
+              break;
 
-          case "frame-to-show-frontend":
-            displayFrame(data.data);
-            break;
+            case "frame-to-show-frontend":
+              displayFrame(data.data);
+              break;
 
-          case "ai":
-            addChatMessage("ai", data.data);
-            break;
+            case "ai":
+              addChatMessage("ai", data.data);
+              break;
 
-          case "user":
-            addChatMessage("user", data.data);
-            break;
+            case "user":
+              addChatMessage("user", data.data);
+              break;
 
-          case "audio_from_gemini":
-            // playAudio(data.data);
-            break;
+            case "audio_from_gemini":
+              const format = data.format || "int16";
+              const sampleRate = data.sample_rate || AUDIO_SAMPLE_RATE;
+              playAudio(data.data, format, sampleRate);
+              break;
 
-          case "broadcaster_changed":
-            document.getElementById("broadcaster").textContent =
-              data.broadcaster_id;
-            addChatMessage("system", `New broadcaster: ${data.broadcaster_id}`);
-            break;
+            case "broadcaster_changed":
+              document.getElementById("broadcaster").textContent =
+                data.broadcaster_id;
+              addChatMessage(
+                "system",
+                `New broadcaster: ${data.broadcaster_id}`
+              );
+              break;
 
-          case "status":
-            updateStatus(data);
-            break;
+            case "status":
+              updateStatus(data);
+              break;
 
-          case "error":
-            console.error("Server error:", data.data);
-            addChatMessage("system", `Server error: ${data.data}`);
-            break;
+            case "error":
+              console.error("Server error:", data.data);
+              addChatMessage("system", `Server error: ${data.data}`);
+              break;
 
-          default:
-            console.log("Unknown message type:", msgType, data);
+            default:
+              console.log("Unknown message type:", msgType, data);
+              addChatMessage("system", `Unknown message type: ${msgType}`);
+          }
+        } catch (error) {
+          console.error("Message handling error:", error);
+          addChatMessage("system", `Error handling message: ${error.message}`);
         }
       }
 
@@ -548,65 +920,31 @@
         const videoFrame = document.getElementById("videoFrame");
         const videoPlaceholder = document.getElementById("videoPlaceholder");
 
-        // Update frame counter
-        frameCount++;
-        document.getElementById("frameCount").textContent = frameCount;
-
-        // Update FPS
-        const now = Date.now();
-        if (now - lastFrameTime >= 1000) {
-          document.getElementById("fps").textContent = fpsCounter;
-          fpsCounter = 0;
-          lastFrameTime = now;
-        }
-        fpsCounter++;
-
-        // Update last update time
-        document.getElementById("lastUpdate").textContent =
-          new Date().toLocaleTimeString();
-
-        // Display frame
-        videoFrame.src = `data:image/jpeg;base64,${frameData}`;
-        videoFrame.style.display = "block";
-        videoPlaceholder.style.display = "none";
-      }
-
-      async function playAudio(audioData) {
-        if (!audioContext || !gainNode) return;
-
         try {
-          // Resume audio context if suspended
-          if (audioContext.state === "suspended") {
-            await audioContext.resume();
+          // Update frame counter
+          frameCount++;
+          document.getElementById("frameCount").textContent = frameCount;
+
+          // Update FPS
+          const now = Date.now();
+          if (now - lastFrameTime >= 1000) {
+            document.getElementById("fps").textContent = fpsCounter;
+            fpsCounter = 0;
+            lastFrameTime = now;
           }
+          fpsCounter++;
 
-          // Decode base64 audio data
-          const binaryString = atob(audioData);
-          const arrayBuffer = new ArrayBuffer(binaryString.length);
-          const uint8Array = new Uint8Array(arrayBuffer);
+          // Update last update time
+          document.getElementById("lastUpdate").textContent =
+            new Date().toLocaleTimeString();
 
-          for (let i = 0; i < binaryString.length; i++) {
-            uint8Array[i] = binaryString.charCodeAt(i);
-          }
-
-          // Decode audio data
-          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-          // Create and play audio source
-          const source = audioContext.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(gainNode);
-          source.start();
-
-          document.getElementById("audioStatus").textContent = "Playing";
-
-          // Reset status after playing
-          setTimeout(() => {
-            document.getElementById("audioStatus").textContent = "Ready";
-          }, 1000);
+          // Display frame
+          videoFrame.src = `data:image/jpeg;base64,${frameData}`;
+          videoFrame.style.display = "block";
+          videoPlaceholder.style.display = "none";
         } catch (error) {
-          console.error("Audio playback error:", error);
-          document.getElementById("audioStatus").textContent = "Error";
+          console.error("Frame display error:", error);
+          addChatMessage("system", "Error displaying video frame");
         }
       }
 
@@ -670,17 +1008,25 @@
       }
 
       // Auto-connect on page load
-      window.addEventListener("load", () => {
-        // Small delay to ensure page is fully loaded
-        setTimeout(() => {
-          connect();
-        }, 500);
-      });
+      // window.addEventListener("load", () => {
+      //   setTimeout(() => {
+      //     connect();
+      //   }, 500);
+      // });
 
       // Handle page unload
       window.addEventListener("beforeunload", () => {
         if (connected) {
           disconnect();
+        }
+      });
+
+      // Handle visibility change to pause/resume audio
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden && audioContext) {
+          audioContext.suspend();
+        } else if (!document.hidden && audioContext && connected) {
+          audioContext.resume();
         }
       });
     </script>

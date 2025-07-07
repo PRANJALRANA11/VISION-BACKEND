@@ -11,6 +11,7 @@ import json
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000 # For sending audio
+# WEBSOCKET_URI = "wss://vision-v2.onrender.com/ws" 
 WEBSOCKET_URI = "ws://localhost:8000/ws" 
 CHUNK = 1024
 
@@ -88,6 +89,7 @@ async def send_audio_and_video(uri):
                             continue
 
                         def encode_frame(frame_to_encode):
+                            
                             rgb = cv2.cvtColor(frame_to_encode, cv2.COLOR_BGR2RGB)
                             img = Image.fromarray(rgb)
                             img.thumbnail((640, 480))
@@ -144,21 +146,21 @@ async def send_audio_and_video(uri):
                         msg_type = msg_json.get("type")
 
                         if msg_type == "audio_from_gemini":
-                            is_playing_audio.set()
-                            audio_data_b64 = msg_json["data"]
-                            audio_data_bytes = base64.b64decode(audio_data_b64)
-                            sample_rate = msg_json.get("sample_rate", 24000) # Default if not provided
-                            audio_format = pyaudio.paInt16 # Assuming int16 as sent by server
+                            # is_playing_audio.set()
+                            # audio_data_b64 = msg_json["data"]
+                            # audio_data_bytes = base64.b64decode(audio_data_b64)
+                            # sample_rate = msg_json.get("sample_rate", 24000) # Default if not provided
+                            # audio_format = pyaudio.paInt16 # Assuming int16 as sent by server
 
-                            if stream_play is None:
-                                stream_play = audio.open(format=audio_format,
-                                                         channels=CHANNELS,
-                                                         rate=sample_rate,
-                                                         output=True)
+                            # if stream_play is None:
+                            #     stream_play = audio.open(format=audio_format,
+                            #                              channels=CHANNELS,
+                            #                              rate=sample_rate,
+                            #                              output=True)
                                 
 
                             
-                            await asyncio.to_thread(stream_play.write, audio_data_bytes)
+                            # await asyncio.to_thread(stream_play.write, audio_data_bytes)
                             is_playing_audio.clear() 
                             print("🔊 Playing audio from Gemini...")
 
